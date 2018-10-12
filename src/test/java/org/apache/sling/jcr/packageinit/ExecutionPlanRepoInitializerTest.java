@@ -16,7 +16,9 @@
  */
 package org.apache.sling.jcr.packageinit;
 
+import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.never;
@@ -45,15 +47,23 @@ import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.packageinit.impl.ExecutionPlanRepoInitializer;
 import org.apache.sling.testing.mock.osgi.MockOsgi;
 import org.apache.sling.testing.mock.sling.junit.SlingContext;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.LoggingEvent;
+import ch.qos.logback.core.Appender;
 
 @RunWith(MockitoJUnitRunner.class)
 public class ExecutionPlanRepoInitializerTest {
@@ -93,9 +103,14 @@ public class ExecutionPlanRepoInitializerTest {
     @Mock
     ExecutionPlanBuilder builder2;
 
-
     @Mock
     ExecutionPlan xplan;
+
+    @Mock
+    private Appender<ILoggingEvent> mockAppender;
+    
+    @Captor
+    private ArgumentCaptor<LoggingEvent> captorLoggingEvent;
 
     private File statusFile;
     
@@ -105,11 +120,31 @@ public class ExecutionPlanRepoInitializerTest {
         when(registry.createExecutionPlan()).thenReturn(builder);
         when(builder.execute()).thenReturn(xplan);
         this.statusFile = temporaryFolder.newFile(STATUSFILE_NAME + UUID.randomUUID());
+        final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        logger.addAppender(mockAppender);
+    }
+
+    @After
+    public void teardown() {
+        final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        logger.detachAppender(mockAppender);
     }
 
     @Test
+    public void skipWithoutExecution() throws Exception {
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(new String[]{});
+
+        initializer.processRepository(slingRepo);
+        verify(mockAppender).doAppend(captorLoggingEvent.capture());
+        final LoggingEvent loggingEvent = captorLoggingEvent.getValue();
+        assertThat(loggingEvent.getFormattedMessage(),
+                is("No executionplans configured skipping init."));
+    }
+
+
+    @Test
     public void waitForRegistryAndInstall() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer();
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
         processRepository(initializer, cdl);
@@ -131,7 +166,7 @@ public class ExecutionPlanRepoInitializerTest {
 
     @Test
     public void doubleExecute() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer();
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
         processRepository(initializer, cdl);
@@ -147,7 +182,7 @@ public class ExecutionPlanRepoInitializerTest {
         when(registry.createExecutionPlan()).thenReturn(builder2);
         
         MockOsgi.deactivate(initializer, context.bundleContext());
-        initializer = registerRepoInitializer();
+        initializer = registerRepoInitializer(EXECUTIONSPLANS);
         processRepository(initializer, cdl);;
         
         cdl.await(500, TimeUnit.MILLISECONDS);
@@ -155,10 +190,10 @@ public class ExecutionPlanRepoInitializerTest {
 
     }
 
-    private ExecutionPlanRepoInitializer registerRepoInitializer() {
+    private ExecutionPlanRepoInitializer registerRepoInitializer(String[] executionPlans) {
         ExecutionPlanRepoInitializer initializer = new ExecutionPlanRepoInitializer();
         Dictionary<String, Object> props = new Hashtable<String, Object>();
-        props.put("executionplans", EXECUTIONSPLANS);
+        props.put("executionplans", executionPlans);
         props.put("statusfilepath", statusFile.getAbsolutePath());
         context.registerInjectActivateService(initializer, props);
         return initializer;

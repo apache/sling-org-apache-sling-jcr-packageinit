@@ -143,7 +143,7 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
 
     @Override
     public void processRepository(SlingRepository slingRepository) throws Exception {
-        if (executionPlans != null) {
+        if (!executionPlans.isEmpty()) {
             ServiceTracker<PackageRegistry, ?> st = new ServiceTracker<>(context, PackageRegistry.class, null);
             try {
                 st.open();
