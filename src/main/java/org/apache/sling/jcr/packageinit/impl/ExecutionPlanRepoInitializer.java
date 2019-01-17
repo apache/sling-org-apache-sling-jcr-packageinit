@@ -81,8 +81,8 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
     private void activate(BundleContext context, Config config) throws FileNotFoundException, IOException {
         List<String> epCandidates = Arrays.asList(config.executionplans());
         if (!epCandidates.isEmpty()) {
-            if(StringUtils.isEmpty(config.statusfilepath())) {
-                // if no  path is configured lookup default file in bundledata
+            if (StringUtils.isEmpty(config.statusfilepath())) {
+                // if no path is configured lookup default file in bundledata
                 statusFile = context.getDataFile(EXECUTEDPLANS_FILE);
             } else {
                 Path statusFilePath = Paths.get(config.statusfilepath());
@@ -116,22 +116,23 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
         // iterate over candidates and crosscheck next found hash
         while (candidateIt.hasNext()) {
             String candidate = candidateIt.next();
-            if (!executedHashesIt.hasNext()) {
+            boolean foundDifference = false;
+            if (!executedHashesIt.hasNext() || foundDifference) {
                 // if no further hashes are present add candidate
                 // (will iterate over rest and add rest)
                 executionPlans.add(candidate);
             } else {
-                // if another hash was found check if it matches the
-                // next candidate
+                // another hash was found & no difference 
                 Integer executedHash = executedHashesIt.next();
                 if (isCandidateProcessed(candidate, executedHash)) {
                     // already processed so no need to add - check
                     // next plan
                     continue;
                 } else {
-                    String msg = "Different content installed then configured - repository needs to be reset.";
-                    logger.error(msg);
-                    throw new IllegalStateException(msg);
+                    executionPlans.add(candidate);
+                    String msg = "Found difference in hashed executionplans - queueing executionplan for processing.";
+                    logger.info(msg);
+                    foundDifference = true;
                 }
             }
         }
@@ -161,7 +162,12 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                         builder.load(new ByteArrayInputStream(plan.getBytes("UTF-8")));
                         builder.with(session);
                         ExecutionPlan xplan = builder.execute();
-                        logger.info("executionplan executed with {} entries", xplan.getTasks().size());
+                        if (xplan.getTasks().size() > 0) {
+                            logger.info("executionplan executed with {} entries", xplan.getTasks().size());
+                        } else {
+                            logger.info("No tasks found in executionplan - no additional packages installed.");
+                        }
+                        
                         // save hashes to file for crosscheck on subsequent startup to avoid double processing
                         writer.write(String.valueOf(plan.hashCode()));
                         writer.newLine();
