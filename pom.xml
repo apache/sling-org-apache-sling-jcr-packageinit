@@ -40,6 +40,11 @@
         <url>https://gitbox.apache.org/repos/asf?p=sling-org-apache-sling-jcr-packageinit.git</url>
         <tag>HEAD</tag>
     </scm>
+
+    <properties>
+        <slingfeature-maven-plugin.version>1.1.11-SNAPSHOT</slingfeature-maven-plugin.version>
+    </properties>
+
     <build>
         <plugins>
             <plugin>
@@ -72,7 +77,26 @@
                     </instructions>
                  </configuration>
             </plugin>
-          
+
+            <!-- Generate and Install the Sling OSGi Feature Model file -->
+            <plugin>
+                <groupId>org.apache.sling</groupId>
+                <artifactId>slingfeature-maven-plugin</artifactId>
+                <version>${slingfeature-maven-plugin.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <id>create-fm-descriptor</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>create-fm-descriptor</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>jcr-packageinit</classifier>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
