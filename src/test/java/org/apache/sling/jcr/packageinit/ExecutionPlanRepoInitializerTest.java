@@ -20,7 +20,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,9 +30,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Iterator;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +44,7 @@ import org.apache.jackrabbit.vault.packaging.PackageException;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
 import org.apache.jackrabbit.vault.packaging.registry.impl.FSPackageRegistry;
 import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.packageinit.impl.ExecutionPlanRepoInitializer;
@@ -114,6 +117,8 @@ public class ExecutionPlanRepoInitializerTest {
 
     private File statusFile;
     
+    private List<Exception> foundExceptions;
+    
 
     @Before
     public void setup() throws IOException, PackageException {
@@ -122,6 +127,7 @@ public class ExecutionPlanRepoInitializerTest {
         this.statusFile = temporaryFolder.newFile(STATUSFILE_NAME + UUID.randomUUID());
         final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
         logger.addAppender(mockAppender);
+        foundExceptions = new ArrayList<Exception>();
     }
 
     @After
@@ -147,7 +153,7 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
-        processRepository(initializer, cdl);
+        processRepository(initializer, cdl, foundExceptions);
 
         assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
         ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
@@ -169,7 +175,7 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
-        processRepository(initializer, cdl);
+        processRepository(initializer, cdl, foundExceptions);
 
         assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
         ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
@@ -183,12 +189,36 @@ public class ExecutionPlanRepoInitializerTest {
         
         MockOsgi.deactivate(initializer, context.bundleContext());
         initializer = registerRepoInitializer(EXECUTIONSPLANS);
-        processRepository(initializer, cdl);;
+        processRepository(initializer, cdl, foundExceptions);
         
         cdl.await(500, TimeUnit.MILLISECONDS);
         verify(builder2, never()).load(captor.capture());
 
     }
+    
+
+    @Test
+    public void failOnError() throws Exception {
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
+
+        CountDownLatch cdl = new CountDownLatch(1);
+
+        assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
+        ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
+        
+        List<PackageTask> ptl = new ArrayList<>();
+        ptl.add(mock(PackageTask.class));
+        when(xplan.getTasks()).thenReturn(ptl);
+        when(xplan.hasErrors()).thenReturn(true);
+
+        processRepository(initializer, cdl, foundExceptions);
+        
+        context.bundleContext().registerService(PackageRegistry.class.getName(), registry, null);
+        cdl.await(500, TimeUnit.MILLISECONDS);
+        verify(builder, times(1)).load(captor.capture());
+        assertTrue("Expected IllegalStateException.",foundExceptions.get(0) instanceof IllegalStateException);
+    }
+
 
     private ExecutionPlanRepoInitializer registerRepoInitializer(String[] executionPlans) {
         ExecutionPlanRepoInitializer initializer = new ExecutionPlanRepoInitializer();
@@ -198,19 +228,17 @@ public class ExecutionPlanRepoInitializerTest {
         context.registerInjectActivateService(initializer, props);
         return initializer;
     }
-    
 
-    private void processRepository(ExecutionPlanRepoInitializer initializer, CountDownLatch cdl) {
+    private void processRepository(ExecutionPlanRepoInitializer initializer, CountDownLatch cdl, List<Exception> foundExceptions) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     initializer.processRepository(slingRepo);
-                    cdl.countDown();
                 } catch (Exception e) {
-                    fail("Should not have thrown any exception");
+                    foundExceptions.add(e);
                 }
-
+                cdl.countDown();
             }
         }).start();
     }

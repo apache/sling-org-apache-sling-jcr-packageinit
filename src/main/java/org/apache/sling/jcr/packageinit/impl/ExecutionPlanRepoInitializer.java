@@ -163,6 +163,9 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                         builder.with(session);
                         ExecutionPlan xplan = builder.execute();
                         if (xplan.getTasks().size() > 0) {
+                            if (xplan.hasErrors()) {
+                                throw new IllegalStateException("Excecutionplan execution contained errors - cannot complete repository initialization.");
+                            }
                             logger.info("executionplan executed with {} entries", xplan.getTasks().size());
                         } else {
                             logger.info("No tasks found in executionplan - no additional packages installed.");
