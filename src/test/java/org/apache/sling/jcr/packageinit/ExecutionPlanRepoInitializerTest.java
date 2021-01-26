@@ -41,10 +41,12 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.vault.packaging.PackageException;
+import org.apache.jackrabbit.vault.packaging.PackageId;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
 import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask.State;
 import org.apache.jackrabbit.vault.packaging.registry.impl.FSPackageRegistry;
 import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.packageinit.impl.ExecutionPlanRepoInitializer;
@@ -57,7 +59,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -65,8 +66,7 @@ import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.LoggingEvent;
-import ch.qos.logback.core.Appender;
+import ch.qos.logback.core.read.ListAppender;
 
 @RunWith(MockitoJUnitRunner.Silent.class)
 public class ExecutionPlanRepoInitializerTest {
@@ -109,11 +109,7 @@ public class ExecutionPlanRepoInitializerTest {
     @Mock
     ExecutionPlan xplan;
 
-    @Mock
-    private Appender<ILoggingEvent> mockAppender;
-    
-    @Captor
-    private ArgumentCaptor<LoggingEvent> captorLoggingEvent;
+    private ListAppender<ILoggingEvent> listAppender;
 
     private File statusFile;
     
@@ -126,14 +122,16 @@ public class ExecutionPlanRepoInitializerTest {
         when(builder.execute()).thenReturn(xplan);
         this.statusFile = temporaryFolder.newFile(STATUSFILE_NAME + UUID.randomUUID());
         final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        logger.addAppender(mockAppender);
+        listAppender = new ListAppender<>();
+        listAppender.start();
+        logger.addAppender(listAppender);
         foundExceptions = new ArrayList<Exception>();
     }
 
     @After
     public void teardown() {
         final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        logger.detachAppender(mockAppender);
+        logger.detachAppender(listAppender);
     }
 
     @Test
@@ -141,9 +139,8 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(new String[]{});
 
         initializer.processRepository(slingRepo);
-        verify(mockAppender).doAppend(captorLoggingEvent.capture());
-        final LoggingEvent loggingEvent = captorLoggingEvent.getValue();
-        assertThat(loggingEvent.getFormattedMessage(),
+        List<ILoggingEvent> logsList = listAppender.list;
+        assertThat(logsList.get(0).getFormattedMessage(),
                 is("No executionplans configured skipping init."));
     }
 
@@ -207,16 +204,27 @@ public class ExecutionPlanRepoInitializerTest {
         ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
         
         List<PackageTask> ptl = new ArrayList<>();
-        ptl.add(mock(PackageTask.class));
+        PackageTask pt = mock(PackageTask.class);
+        when(pt.getPackageId()).thenReturn(PackageId.fromString("test:test:1.0"));
+        when(pt.getState()).thenReturn(State.ERROR);
+        when(pt.getError()).thenReturn(new Throwable("expectedException"));
+        ptl.add(pt);
         when(xplan.getTasks()).thenReturn(ptl);
         when(xplan.hasErrors()).thenReturn(true);
 
         processRepository(initializer, cdl, foundExceptions);
         
         context.bundleContext().registerService(PackageRegistry.class.getName(), registry, null);
-        cdl.await(500, TimeUnit.MILLISECONDS);
+        cdl.await(20500, TimeUnit.MILLISECONDS);
         verify(builder, times(1)).load(captor.capture());
         assertTrue("Expected IllegalStateException.",foundExceptions.get(0) instanceof IllegalStateException);
+        
+        List<ILoggingEvent> logsList = listAppender.list;
+        assertEquals("Waiting for PackageRegistry.", logsList.get(0)
+                                      .getMessage());
+        assertEquals("PackageRegistry found - starting execution of executionplan", logsList.get(1)
+            .getMessage());
+        assertEquals("Error during installation of test:test:1.0: java.lang.Throwable: expectedException", logsList.get(2).getFormattedMessage());
     }
 
 

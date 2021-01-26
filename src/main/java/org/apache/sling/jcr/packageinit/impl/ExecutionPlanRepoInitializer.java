@@ -20,6 +20,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
 import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.api.SlingRepositoryInitializer;
 import org.osgi.framework.BundleContext;
@@ -164,6 +165,11 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                         ExecutionPlan xplan = builder.execute();
                         if (xplan.getTasks().size() > 0) {
                             if (xplan.hasErrors()) {
+                                for (PackageTask task : xplan.getTasks()) {
+                                    if (PackageTask.State.ERROR.equals(task.getState())){
+                                        logger.error("Error during installation of {}: {}", task.getPackageId().toString(), task.getError().toString());
+                                    }
+                                }
                                 throw new IllegalStateException("Excecutionplan execution contained errors - cannot complete repository initialization.");
                             }
                             logger.info("executionplan executed with {} entries", xplan.getTasks().size());
