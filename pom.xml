@@ -22,13 +22,12 @@
 
   <parent>
     <groupId>org.apache.sling</groupId>
-    <artifactId>sling</artifactId>
-    <version>34</version>
+    <artifactId>sling-bundle-parent</artifactId>
+    <version>40</version>
     <relativePath />
   </parent>
 
   <artifactId>org.apache.sling.jcr.packageinit</artifactId>
-  <packaging>bundle</packaging>
   <version>1.0.1-SNAPSHOT</version>
   <name>Apache Sling JCR Package Initializer module</name>
   <description>
@@ -40,41 +39,6 @@
         <url>https://gitbox.apache.org/repos/asf?p=sling-org-apache-sling-jcr-packageinit.git</url>
         <tag>HEAD</tag>
     </scm>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.felix</groupId>
-                <artifactId>maven-bundle-plugin</artifactId>
-                <extensions>true</extensions>
-                <executions>
-                    <!-- Configure extra execution of 'manifest' in process-classes phase to make sure SCR metadata is generated before unit test runs -->
-                    <execution>
-                        <id>scr-metadata</id>
-                        <goals>
-                            <goal>manifest</goal>
-                        </goals>
-                        <configuration>
-                            <supportIncrementalBuild>true</supportIncrementalBuild>
-                        </configuration>
-                    </execution>
-                </executions>
-                <configuration>
-                    <!-- Export SCR metadata to classpath to have them available in unit tests -->
-                    <exportScr>true</exportScr>
-                    <instructions>
-                        <!-- Enable processing of OSGI DS component annotations -->
-                        <_dsannotations>*</_dsannotations>
-                        <!-- Enable processing of OSGI metatype annotations -->
-                        <_metatypeannotations>*</_metatypeannotations>
-                        <Private-Package>
-                            org.apache.sling.jcr.packageinit.impl
-                        </Private-Package>
-                    </instructions>
-                 </configuration>
-            </plugin>
-          
-        </plugins>
-    </build>
 
     <dependencies>
         <dependency>

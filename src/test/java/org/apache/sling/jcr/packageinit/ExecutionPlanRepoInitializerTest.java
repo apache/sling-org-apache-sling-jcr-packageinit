@@ -20,7 +20,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,18 +30,23 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Iterator;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.vault.packaging.PackageException;
+import org.apache.jackrabbit.vault.packaging.PackageId;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask.State;
 import org.apache.jackrabbit.vault.packaging.registry.impl.FSPackageRegistry;
 import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.packageinit.impl.ExecutionPlanRepoInitializer;
@@ -54,7 +59,6 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -62,8 +66,7 @@ import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.LoggingEvent;
-import ch.qos.logback.core.Appender;
+import ch.qos.logback.core.read.ListAppender;
 
 @RunWith(MockitoJUnitRunner.Silent.class)
 public class ExecutionPlanRepoInitializerTest {
@@ -106,13 +109,11 @@ public class ExecutionPlanRepoInitializerTest {
     @Mock
     ExecutionPlan xplan;
 
-    @Mock
-    private Appender<ILoggingEvent> mockAppender;
-    
-    @Captor
-    private ArgumentCaptor<LoggingEvent> captorLoggingEvent;
+    private ListAppender<ILoggingEvent> listAppender;
 
     private File statusFile;
+    
+    private List<Exception> foundExceptions;
     
 
     @Before
@@ -121,13 +122,16 @@ public class ExecutionPlanRepoInitializerTest {
         when(builder.execute()).thenReturn(xplan);
         this.statusFile = temporaryFolder.newFile(STATUSFILE_NAME + UUID.randomUUID());
         final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        logger.addAppender(mockAppender);
+        listAppender = new ListAppender<>();
+        listAppender.start();
+        logger.addAppender(listAppender);
+        foundExceptions = new ArrayList<Exception>();
     }
 
     @After
     public void teardown() {
         final Logger logger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        logger.detachAppender(mockAppender);
+        logger.detachAppender(listAppender);
     }
 
     @Test
@@ -135,9 +139,8 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(new String[]{});
 
         initializer.processRepository(slingRepo);
-        verify(mockAppender).doAppend(captorLoggingEvent.capture());
-        final LoggingEvent loggingEvent = captorLoggingEvent.getValue();
-        assertThat(loggingEvent.getFormattedMessage(),
+        List<ILoggingEvent> logsList = listAppender.list;
+        assertThat(logsList.get(0).getFormattedMessage(),
                 is("No executionplans configured skipping init."));
     }
 
@@ -147,7 +150,7 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
-        processRepository(initializer, cdl);
+        processRepository(initializer, cdl, foundExceptions);
 
         assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
         ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
@@ -169,7 +172,7 @@ public class ExecutionPlanRepoInitializerTest {
         ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
 
         CountDownLatch cdl = new CountDownLatch(1);
-        processRepository(initializer, cdl);
+        processRepository(initializer, cdl, foundExceptions);
 
         assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
         ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
@@ -183,12 +186,48 @@ public class ExecutionPlanRepoInitializerTest {
         
         MockOsgi.deactivate(initializer, context.bundleContext());
         initializer = registerRepoInitializer(EXECUTIONSPLANS);
-        processRepository(initializer, cdl);;
+        processRepository(initializer, cdl, foundExceptions);
         
         cdl.await(500, TimeUnit.MILLISECONDS);
         verify(builder2, never()).load(captor.capture());
 
     }
+    
+
+    @Test
+    public void failOnError() throws Exception {
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
+
+        CountDownLatch cdl = new CountDownLatch(1);
+
+        assertTrue("processRespository() should not be completed before FSRegistry is available", cdl.getCount() > 0);
+        ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
+        
+        List<PackageTask> ptl = new ArrayList<>();
+        PackageTask pt = mock(PackageTask.class);
+        when(pt.getPackageId()).thenReturn(PackageId.fromString("test:test:1.0"));
+        when(pt.getState()).thenReturn(State.ERROR);
+        Throwable testEx = new Throwable("expectedException");
+        when(pt.getError()).thenReturn(testEx);
+        ptl.add(pt);
+        when(xplan.getTasks()).thenReturn(ptl);
+        when(xplan.hasErrors()).thenReturn(true);
+
+        processRepository(initializer, cdl, foundExceptions);
+        
+        context.bundleContext().registerService(PackageRegistry.class.getName(), registry, null);
+        cdl.await(20500, TimeUnit.MILLISECONDS);
+        verify(builder, times(1)).load(captor.capture());
+        assertTrue("Expected IllegalStateException.",foundExceptions.get(0) instanceof IllegalStateException);
+        assertEquals(testEx.getMessage(), foundExceptions.get(0).getSuppressed()[0].getMessage());
+
+        List<ILoggingEvent> logsList = listAppender.list;
+        assertEquals("Waiting for PackageRegistry.", logsList.get(0)
+                                      .getMessage());
+        assertEquals("PackageRegistry found - starting execution of executionplan", logsList.get(1)
+            .getMessage());
+    }
+
 
     private ExecutionPlanRepoInitializer registerRepoInitializer(String[] executionPlans) {
         ExecutionPlanRepoInitializer initializer = new ExecutionPlanRepoInitializer();
@@ -198,19 +237,17 @@ public class ExecutionPlanRepoInitializerTest {
         context.registerInjectActivateService(initializer, props);
         return initializer;
     }
-    
 
-    private void processRepository(ExecutionPlanRepoInitializer initializer, CountDownLatch cdl) {
+    private void processRepository(ExecutionPlanRepoInitializer initializer, CountDownLatch cdl, List<Exception> foundExceptions) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     initializer.processRepository(slingRepo);
-                    cdl.countDown();
                 } catch (Exception e) {
-                    fail("Should not have thrown any exception");
+                    foundExceptions.add(e);
                 }
-
+                cdl.countDown();
             }
         }).start();
     }
