@@ -165,12 +165,13 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                         ExecutionPlan xplan = builder.execute();
                         if (xplan.getTasks().size() > 0) {
                             if (xplan.hasErrors()) {
+                                IllegalStateException ex = new IllegalStateException("Excecutionplan execution contained errors - cannot complete repository initialization.");
                                 for (PackageTask task : xplan.getTasks()) {
                                     if (PackageTask.State.ERROR.equals(task.getState())){
-                                        logger.error("Error during installation of {}: {}", task.getPackageId().toString(), task.getError().toString());
+                                        ex.addSuppressed(task.getError());
                                     }
                                 }
-                                throw new IllegalStateException("Excecutionplan execution contained errors - cannot complete repository initialization.");
+                                throw ex;
                             }
                             logger.info("executionplan executed with {} entries", xplan.getTasks().size());
                         } else {
