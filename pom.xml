@@ -29,7 +29,7 @@
 
   <artifactId>org.apache.sling.jcr.packageinit</artifactId>
   <version>1.0.1-SNAPSHOT</version>
-  <name>Apache Sling JCR Package Initializer module</name>
+  <name>Apache Sling JCR Package Init</name>
   <description>
 	  Installs packages into a JCR repository as SlingRepositoryInitializer based on a FileVault ExecutionPlan
   </description>
