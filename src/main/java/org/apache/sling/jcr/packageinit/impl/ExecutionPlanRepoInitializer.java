@@ -43,6 +43,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -61,7 +62,7 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
     private File statusFile;
 
     @ObjectClassDefinition(
-            name = "Executionplan based Repository Initializer"
+            name = "Execution plan based Repository Initializer"
     )
     @interface Config {
         
@@ -151,21 +152,19 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                 st.open();
                 logger.info("Waiting for PackageRegistry.");
                 PackageRegistry registry = (PackageRegistry) st.waitForService(0);
-                logger.info("PackageRegistry found - starting execution of executionplan");
+                logger.info("PackageRegistry found - starting execution of execution plan");
                 
+                ExecutionPlanBuilder builder = registry.createExecutionPlan();
                 @SuppressWarnings("deprecation")
                 Session session = slingRepository.loginAdministrative(null);
-                ExecutionPlanBuilder builder = registry.createExecutionPlan();
-                BufferedWriter writer = null;
-                try {
-                    writer = new BufferedWriter(new FileWriter(statusFile));
+                try (BufferedWriter writer = new BufferedWriter(new FileWriter(statusFile))) {
                     for (String plan : executionPlans) {
-                        builder.load(new ByteArrayInputStream(plan.getBytes("UTF-8")));
+                        builder.load(new ByteArrayInputStream(plan.getBytes(StandardCharsets.UTF_8)));
                         builder.with(session);
                         ExecutionPlan xplan = builder.execute();
                         if (xplan.getTasks().size() > 0) {
                             if (xplan.hasErrors()) {
-                                IllegalStateException ex = new IllegalStateException("Excecutionplan execution contained errors - cannot complete repository initialization.");
+                                IllegalStateException ex = new IllegalStateException("Execution plan contained errors - cannot complete repository initialization.");
                                 for (PackageTask task : xplan.getTasks()) {
                                     if (PackageTask.State.ERROR.equals(task.getState())){
                                         ex.addSuppressed(task.getError());
@@ -173,9 +172,9 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                                 }
                                 throw ex;
                             }
-                            logger.info("executionplan executed with {} entries", xplan.getTasks().size());
+                            logger.info("Execution plan executed with {} entries", xplan.getTasks().size());
                         } else {
-                            logger.info("No tasks found in executionplan - no additional packages installed.");
+                            logger.info("No tasks found in execution plan - no additional packages installed.");
                         }
                         
                         // save hashes to file for crosscheck on subsequent startup to avoid double processing
@@ -184,15 +183,13 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
 
                     }
                 } finally {
-                    if (writer != null) {
-                        writer.close();
-                    }
+                    session.logout();
                 }
             } finally {
                 st.close();
             }
         } else {
-            logger.info("No executionplans configured skipping init.");
+            logger.info("No execution plans configured - skipping init.");
         }
     }
 }

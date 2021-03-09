@@ -39,6 +39,10 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import javax.jcr.LoginException;
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.vault.packaging.PackageException;
 import org.apache.jackrabbit.vault.packaging.PackageId;
@@ -97,6 +101,9 @@ public class ExecutionPlanRepoInitializerTest {
     @Mock
     SlingRepository slingRepo;
 
+    @Mock
+    Session adminSession;
+
     @Spy
     PackageRegistry registry = new FSPackageRegistry();
 
@@ -117,7 +124,7 @@ public class ExecutionPlanRepoInitializerTest {
     
 
     @Before
-    public void setup() throws IOException, PackageException {
+    public void setup() throws IOException, PackageException, LoginException, RepositoryException {
         when(registry.createExecutionPlan()).thenReturn(builder);
         when(builder.execute()).thenReturn(xplan);
         this.statusFile = temporaryFolder.newFile(STATUSFILE_NAME + UUID.randomUUID());
@@ -126,6 +133,7 @@ public class ExecutionPlanRepoInitializerTest {
         listAppender.start();
         logger.addAppender(listAppender);
         foundExceptions = new ArrayList<Exception>();
+        when(slingRepo.loginAdministrative(null)).thenReturn(adminSession);
     }
 
     @After
@@ -141,7 +149,7 @@ public class ExecutionPlanRepoInitializerTest {
         initializer.processRepository(slingRepo);
         List<ILoggingEvent> logsList = listAppender.list;
         assertThat(logsList.get(0).getFormattedMessage(),
-                is("No executionplans configured skipping init."));
+                is("No execution plans configured - skipping init."));
     }
 
 
@@ -224,7 +232,7 @@ public class ExecutionPlanRepoInitializerTest {
         List<ILoggingEvent> logsList = listAppender.list;
         assertEquals("Waiting for PackageRegistry.", logsList.get(0)
                                       .getMessage());
-        assertEquals("PackageRegistry found - starting execution of executionplan", logsList.get(1)
+        assertEquals("PackageRegistry found - starting execution of execution plan", logsList.get(1)
             .getMessage());
     }
 
