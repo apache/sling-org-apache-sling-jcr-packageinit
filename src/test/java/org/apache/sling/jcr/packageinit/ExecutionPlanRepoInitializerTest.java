@@ -44,6 +44,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.jackrabbit.vault.packaging.PackageException;
 import org.apache.jackrabbit.vault.packaging.PackageId;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
@@ -193,7 +194,9 @@ public class ExecutionPlanRepoInitializerTest {
         when(registry.createExecutionPlan()).thenReturn(builder2);
         
         MockOsgi.deactivate(initializer, context.bundleContext());
-        initializer = registerRepoInitializer(EXECUTIONSPLANS);
+        // 2nd time register in inverted order
+        initializer = registerRepoInitializer(new String[] { EXECUTIONPLAN_2, EXECUTIONPLAN_1 });
+        cdl = new CountDownLatch(1);
         processRepository(initializer, cdl, foundExceptions);
         
         cdl.await(500, TimeUnit.MILLISECONDS);

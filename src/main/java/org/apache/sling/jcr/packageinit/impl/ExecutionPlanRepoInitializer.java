@@ -48,8 +48,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component(service = {SlingRepositoryInitializer.class},
         property = {"service.ranking:Integer=200"})
@@ -98,13 +100,13 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
             }
             if (statusFile.exists()) {
                 // in case statusFile already exists read all hashes
-                List<Integer> executedHashes = new ArrayList<>();
+                Set<Integer> executedHashes = new HashSet<>();
                 try (BufferedReader br = new BufferedReader(new FileReader(statusFile))) {
                     for (String line; (line = br.readLine()) != null;) {
                         executedHashes.add(Integer.parseInt(line));
                     }
                 }
-                processCandidates(epCandidates, executedHashes);
+                this.executionPlans.addAll(filterCandidates(epCandidates, executedHashes));
             } else {
                this.executionPlans.addAll(epCandidates);
             }
@@ -112,36 +114,13 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
         this.context = context;
     }
 
-    private void processCandidates(List<String> epCandidates, List<Integer> executedHashes) {
-        Iterator<String> candidateIt = epCandidates.iterator();
-        Iterator<Integer> executedHashesIt = executedHashes.iterator();
-        // iterate over candidates and crosscheck next found hash
-        while (candidateIt.hasNext()) {
-            String candidate = candidateIt.next();
-            boolean foundDifference = false;
-            if (!executedHashesIt.hasNext() || foundDifference) {
-                // if no further hashes are present add candidate
-                // (will iterate over rest and add rest)
-                executionPlans.add(candidate);
-            } else {
-                // another hash was found & no difference 
-                Integer executedHash = executedHashesIt.next();
-                if (isCandidateProcessed(candidate, executedHash)) {
-                    // already processed so no need to add - check
-                    // next plan
-                    continue;
-                } else {
-                    executionPlans.add(candidate);
-                    String msg = "Found difference in hashed executionplans - queueing executionplan for processing.";
-                    logger.info(msg);
-                    foundDifference = true;
-                }
-            }
-        }
+    private static List<String> filterCandidates(List<String> epCandidates, Set<Integer> executedHashes) {
+        // only add those candidates which have not been processed yet
+       return epCandidates.stream().filter(candidate -> !isCandidateProcessed(candidate, executedHashes)).collect(Collectors.toList());
     }
 
-    private boolean isCandidateProcessed(String candidate, Integer executedHash) {
-        return executedHash.equals(Integer.valueOf(candidate.hashCode()));
+    private static boolean isCandidateProcessed(String candidate, Set<Integer> executedHashes) {
+        return executedHashes.contains(Integer.valueOf(candidate.hashCode()));
     }
 
     @Override
