@@ -105,8 +105,8 @@ public class ExecutionPlanRepoInitializerTest {
     @Mock
     Session adminSession;
 
-    @Spy
-    PackageRegistry registry = new FSPackageRegistry();
+    @Mock
+    PackageRegistry registry;
 
     @Mock
     ExecutionPlanBuilder builder;
