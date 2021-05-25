@@ -132,9 +132,6 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                 logger.info("Waiting for PackageRegistry.");
                 PackageRegistry registry = (PackageRegistry) st.waitForService(0);
                 logger.info("PackageRegistry found - starting execution of execution plan");
-                // workaround until https://issues.apache.org/jira/browse/JCRVLT-517 is solved: registry.contains yields false value until initialized,
-                // making the call ExecutionPlan.execute() later fail if a new package has a dependency on another package declared
-                registry.packages();
                 
                 ExecutionPlanBuilder builder = registry.createExecutionPlan();
                 @SuppressWarnings("deprecation")
