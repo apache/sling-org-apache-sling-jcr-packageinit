@@ -6,4 +6,6 @@
 
 This module is part of the [Apache Sling](https://sling.apache.org) project.
 
-This project is about creating a SlingRepositoryInitializer initializing the JCR Repository from a given FSPackageRegistry with precalculated ExecutionPlans.
+This project creates a `SlingRepositoryInitializer` initializing the JCR Repository by installing packages from the [FSPackageRegistry](http://jackrabbit.apache.org/filevault/apidocs/org/apache/jackrabbit/vault/packaging/registry/impl/FSPackageRegistry.html) through configured [ExecutionPlans](http://jackrabbit.apache.org/filevault/apidocs/org/apache/jackrabbit/vault/packaging/registry/ExecutionPlan.html).
+
+Such execution plans are for example configured through the [Content Deployment Extension](https://github.com/apache/sling-org-apache-sling-feature-extension-content).

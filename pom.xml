@@ -20,19 +20,17 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <parent>
-    <groupId>org.apache.sling</groupId>
-    <artifactId>sling-bundle-parent</artifactId>
-    <version>41</version>
-    <relativePath />
-  </parent>
+    <parent>
+        <groupId>org.apache.sling</groupId>
+        <artifactId>sling-bundle-parent</artifactId>
+        <version>43</version>
+        <relativePath />
+    </parent>
 
-  <artifactId>org.apache.sling.jcr.packageinit</artifactId>
-  <version>1.0.3-SNAPSHOT</version>
-  <name>Apache Sling JCR Package Init</name>
-  <description>
-	  Installs packages into a JCR repository as SlingRepositoryInitializer based on a FileVault ExecutionPlan
-  </description>
+    <artifactId>org.apache.sling.jcr.packageinit</artifactId>
+    <version>1.0.3-SNAPSHOT</version>
+    <name>Apache Sling JCR Package Init</name>
+    <description>Installs packages into a JCR repository as SlingRepositoryInitializer based on a FileVault ExecutionPlan</description>
     <scm>
         <connection>scm:git:https://gitbox.apache.org/repos/asf/sling-org-apache-sling-jcr-packageinit.git</connection>
         <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/sling-org-apache-sling-jcr-packageinit.git</developerConnection>
@@ -49,7 +47,11 @@
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.util.tracker</artifactId>
-            <version>1.5.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>

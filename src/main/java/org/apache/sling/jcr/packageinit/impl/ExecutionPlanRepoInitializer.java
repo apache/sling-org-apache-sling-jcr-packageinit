@@ -16,25 +16,6 @@
  */
 package org.apache.sling.jcr.packageinit.impl;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
-import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
-import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
-import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
-import org.apache.sling.jcr.api.SlingRepository;
-import org.apache.sling.jcr.api.SlingRepositoryInitializer;
-import org.osgi.framework.BundleContext;
-import org.osgi.service.component.annotations.Activate;
-import org.osgi.service.component.annotations.Component;
-import org.osgi.service.metatype.annotations.AttributeDefinition;
-import org.osgi.service.metatype.annotations.Designate;
-import org.osgi.service.metatype.annotations.ObjectClassDefinition;
-import org.osgi.util.tracker.ServiceTracker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.jcr.Session;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
@@ -53,9 +34,29 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Component(service = {SlingRepositoryInitializer.class},
-        property = {"service.ranking:Integer=200"})
+import javax.jcr.Session;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
+import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
+import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
+import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
+import org.apache.sling.jcr.api.SlingRepository;
+import org.apache.sling.jcr.api.SlingRepositoryInitializer;
+import org.osgi.framework.BundleContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.propertytypes.ServiceRanking;
+import org.osgi.service.metatype.annotations.AttributeDefinition;
+import org.osgi.service.metatype.annotations.Designate;
+import org.osgi.service.metatype.annotations.ObjectClassDefinition;
+import org.osgi.util.tracker.ServiceTracker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Component(service = {SlingRepositoryInitializer.class})
 @Designate(ocd = ExecutionPlanRepoInitializer.Config.class)
+@ServiceRanking(200)
 public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer {
 
     private static final String EXECUTEDPLANS_FILE = "executedplans.file";
