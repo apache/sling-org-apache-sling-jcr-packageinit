@@ -28,18 +28,18 @@
     </parent>
 
     <artifactId>org.apache.sling.jcr.packageinit</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5-SNAPSHOT</version>
     <name>Apache Sling JCR Package Init</name>
     <description>Installs packages into a JCR repository as SlingRepositoryInitializer based on a FileVault ExecutionPlan</description>
     <scm>
         <connection>scm:git:https://gitbox.apache.org/repos/asf/sling-org-apache-sling-jcr-packageinit.git</connection>
         <developerConnection>scm:git:https://gitbox.apache.org/repos/asf/sling-org-apache-sling-jcr-packageinit.git</developerConnection>
         <url>https://gitbox.apache.org/repos/asf?p=sling-org-apache-sling-jcr-packageinit.git</url>
-        <tag>org.apache.sling.jcr.packageinit-1.0.4</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <properties>
-        <project.build.outputTimestamp>2021-06-08T08:46:32Z</project.build.outputTimestamp>
+        <project.build.outputTimestamp>2021-06-08T08:46:53Z</project.build.outputTimestamp>
         <sling.java.version>8</sling.java.version>
     </properties>
 
