@@ -29,7 +29,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import javax.jcr.Session;
 
@@ -70,6 +69,9 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
 
         @AttributeDefinition
         String[] executionplans() default {};
+        
+        @AttributeDefinition
+        boolean reinstallSnapshots() default false;
     }
 
     /**
@@ -83,11 +85,6 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
     private void activate(BundleContext context, Config config) {
         this.context = context;
         this.config = config;
-    }
-
-    private static List<String> filterCandidates(List<String> epCandidates, Set<Integer> executedHashes) {
-        // only add those candidates which have not been processed yet
-       return epCandidates.stream().filter(candidate -> !isCandidateProcessed(candidate, executedHashes)).collect(Collectors.toList());
     }
 
     private static boolean isCandidateProcessed(String candidate, Set<Integer> executedHashes) {
@@ -136,8 +133,10 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                     for (String plan : epCandidates) {
                         builder.load(new ByteArrayInputStream(plan.getBytes(StandardCharsets.UTF_8)));
                         builder.with(session);
-                        boolean hasSnapshot = builder.preview().stream().anyMatch( p -> p.getVersionString().endsWith("-SNAPSHOT"));
-                        if ( !hasSnapshot && isCandidateProcessed(plan, executedHashes)) {
+                        boolean planHasSnapshot = builder.preview().stream().anyMatch( p -> p.getVersionString().endsWith("-SNAPSHOT"));
+                        // by default check if either there are no SNAPSHOT versions ( e.g. all releases ) or if the config was set to not reinstall snapshots
+                        boolean checkIfCandidateWasProcessed = !planHasSnapshot || !config.reinstallSnapshots();
+                        if ( checkIfCandidateWasProcessed && isCandidateProcessed(plan, executedHashes)) {
                             continue;
                         }
                         ExecutionPlan xplan = builder.execute();
@@ -156,12 +155,9 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                             logger.info("No tasks found in execution plan - no additional packages installed.");
                         }
                         
-                        if ( !hasSnapshot ) {
-                            // save hashes to file for crosscheck on subsequent startup to avoid double processing
-                            // but always process SNAPSHOT packages
-                            writer.write(String.valueOf(plan.hashCode()));
-                            writer.newLine();
-                        }
+                        // save hashes to file for crosscheck on subsequent startup to avoid double processing
+                        writer.write(String.valueOf(plan.hashCode()));
+                        writer.newLine();
 
                     }
                 } finally {
