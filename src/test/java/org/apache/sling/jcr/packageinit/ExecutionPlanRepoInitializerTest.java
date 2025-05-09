@@ -30,7 +30,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -44,7 +47,6 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.ArrayUtils;
 import org.apache.jackrabbit.vault.packaging.PackageException;
 import org.apache.jackrabbit.vault.packaging.PackageId;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
@@ -52,7 +54,6 @@ import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
 import org.apache.jackrabbit.vault.packaging.registry.PackageTask;
 import org.apache.jackrabbit.vault.packaging.registry.PackageTask.State;
-import org.apache.jackrabbit.vault.packaging.registry.impl.FSPackageRegistry;
 import org.apache.sling.jcr.api.SlingRepository;
 import org.apache.sling.jcr.packageinit.impl.ExecutionPlanRepoInitializer;
 import org.apache.sling.testing.mock.osgi.MockOsgi;
@@ -65,7 +66,6 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.MockitoJUnitRunner;
 import org.slf4j.LoggerFactory;
 
@@ -85,8 +85,8 @@ public class ExecutionPlanRepoInitializerTest {
     static String EXECUTIONPLAN_2 =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
                     "<executionPlan version=\"1.0\">\n" +
-                    "    <task cmd=\"extract\" packageId=\"my_packages:test_b:1.0\"/>\n" +
-                    "</executionPlan>\n";
+                    "    <task cmd=\"extract\" packageId=\"my_packages:test_b:1.0-SNAPSHOT\"/>\n" +
+                    "</executionPlan>\n";    
     
     static String[] EXECUTIONSPLANS = {EXECUTIONPLAN_1, EXECUTIONPLAN_2};
     
@@ -133,7 +133,7 @@ public class ExecutionPlanRepoInitializerTest {
         listAppender = new ListAppender<>();
         listAppender.start();
         logger.addAppender(listAppender);
-        foundExceptions = new ArrayList<Exception>();
+        foundExceptions = new ArrayList<>();
         when(slingRepo.loginAdministrative(null)).thenReturn(adminSession);
     }
 
@@ -145,7 +145,7 @@ public class ExecutionPlanRepoInitializerTest {
 
     @Test
     public void skipWithoutExecution() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(new String[]{});
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(new String[]{}, false);
 
         initializer.processRepository(slingRepo);
         List<ILoggingEvent> logsList = listAppender.list;
@@ -156,7 +156,7 @@ public class ExecutionPlanRepoInitializerTest {
 
     @Test
     public void waitForRegistryAndInstall() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS, false);
 
         CountDownLatch cdl = new CountDownLatch(1);
         processRepository(initializer, cdl, foundExceptions);
@@ -178,7 +178,7 @@ public class ExecutionPlanRepoInitializerTest {
 
     @Test
     public void doubleExecute() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS, false);
 
         CountDownLatch cdl = new CountDownLatch(1);
         processRepository(initializer, cdl, foundExceptions);
@@ -189,25 +189,26 @@ public class ExecutionPlanRepoInitializerTest {
         context.bundleContext().registerService(PackageRegistry.class.getName(), registry, null);
         cdl.await(500, TimeUnit.MILLISECONDS);
         verify(builder, times(2)).load(captor.capture());
-        
+        verify(builder, times(2)).execute();
+
         // use different builder to reset captor
         when(registry.createExecutionPlan()).thenReturn(builder2);
         
         MockOsgi.deactivate(initializer, context.bundleContext());
         // 2nd time register in inverted order
-        initializer = registerRepoInitializer(new String[] { EXECUTIONPLAN_2, EXECUTIONPLAN_1 });
+        initializer = registerRepoInitializer(new String[] { EXECUTIONPLAN_2, EXECUTIONPLAN_1 }, false);
         cdl = new CountDownLatch(1);
         processRepository(initializer, cdl, foundExceptions);
         
         cdl.await(500, TimeUnit.MILLISECONDS);
-        verify(builder2, never()).load(captor.capture());
-
+        verify(builder2, times(2)).load(captor.capture());
+        verify(builder2, never()).execute();
     }
     
 
     @Test
     public void failOnError() throws Exception {
-        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS);
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS, false);
 
         CountDownLatch cdl = new CountDownLatch(1);
 
@@ -238,13 +239,54 @@ public class ExecutionPlanRepoInitializerTest {
         assertEquals("PackageRegistry found - starting execution of execution plan", logsList.get(1)
             .getMessage());
     }
+    
+    @Test
+    public void skipPlanWithExistingHash() throws Exception {
+        
+        testSkipExecutionPlanWithSnapshots(false);
+    }
 
+    @Test
+    public void reinstallSnapshotIfRequestedEvenWithExistingHash() throws Exception {
+        
+        testSkipExecutionPlanWithSnapshots(true);
+    }
+    
+    private void testSkipExecutionPlanWithSnapshots(boolean reinstallSnapshots) throws Exception {
+        
+        // simulate previous installation by writing hashcodes to the status file
+        Files.write(statusFile.toPath(), Arrays.asList(EXECUTIONPLAN_1.hashCode() + "", EXECUTIONPLAN_2.hashCode() + ""));
+        
+        // configure builder to return a snapshot for the second execution plan
+        when(builder.preview())
+            .thenReturn(Collections.singleton(PackageId.fromString("my_packages:test_a:1.0")))
+            .thenReturn(Collections.singleton(PackageId.fromString("my_packages:test_b:1.0-SNAPSHOT")));
+        
+        context.bundleContext().registerService(PackageRegistry.class.getName(), registry, null);
+        
+        
+        ExecutionPlanRepoInitializer initializer = registerRepoInitializer(EXECUTIONSPLANS, reinstallSnapshots);
+        initializer.processRepository(slingRepo);
+        
+        ArgumentCaptor<InputStream> captor = ArgumentCaptor.forClass(InputStream.class);
+        
+        verify(builder, times(2)).load(captor.capture());
 
-    private ExecutionPlanRepoInitializer registerRepoInitializer(String[] executionPlans) {
+        if (reinstallSnapshots) {
+            // only SNAPSHOT package is reinstalled
+            verify(builder, times(1)).execute();
+        } else {
+            // no packages are reinstalled
+            verify(builder, never()).execute();
+        }
+    }
+
+    private ExecutionPlanRepoInitializer registerRepoInitializer(String[] executionPlans, boolean reinstallSnapshots) {
         ExecutionPlanRepoInitializer initializer = new ExecutionPlanRepoInitializer();
-        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        Dictionary<String, Object> props = new Hashtable<>();
         props.put("executionplans", executionPlans);
         props.put("statusfilepath", statusFile.getAbsolutePath());
+        props.put("reinstallSnapshots", reinstallSnapshots);
         context.registerInjectActivateService(initializer, props);
         return initializer;
     }

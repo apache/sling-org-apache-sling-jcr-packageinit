@@ -20,19 +20,15 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import javax.jcr.Session;
 
@@ -60,7 +56,6 @@ import org.slf4j.LoggerFactory;
 public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer {
 
     private static final String EXECUTEDPLANS_FILE = "executedplans.file";
-    private List<String> executionPlans = new ArrayList<>();
     
     private File statusFile;
 
@@ -74,6 +69,9 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
 
         @AttributeDefinition
         String[] executionplans() default {};
+        
+        @AttributeDefinition
+        boolean reinstallSnapshots() default false;
     }
 
     /**
@@ -81,43 +79,12 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
      */
     private final Logger logger = LoggerFactory.getLogger(getClass());
     private BundleContext context;
+    private Config config;
 
     @Activate
-    private void activate(BundleContext context, Config config) throws FileNotFoundException, IOException {
-        List<String> epCandidates = Arrays.asList(config.executionplans());
-        if (!epCandidates.isEmpty()) {
-            if (StringUtils.isEmpty(config.statusfilepath())) {
-                // if no path is configured lookup default file in bundledata
-                statusFile = context.getDataFile(EXECUTEDPLANS_FILE);
-            } else {
-                Path statusFilePath = Paths.get(config.statusfilepath());
-                if (statusFilePath.isAbsolute()) {
-                    // only absolute references are considered for lookup of
-                    // external statusfile
-                    statusFile = statusFilePath.toFile();
-                } else {
-                    throw new IllegalStateException("Only absolute paths supported");
-                }
-            }
-            if (statusFile.exists()) {
-                // in case statusFile already exists read all hashes
-                Set<Integer> executedHashes = new HashSet<>();
-                try (BufferedReader br = new BufferedReader(new FileReader(statusFile))) {
-                    for (String line; (line = br.readLine()) != null;) {
-                        executedHashes.add(Integer.parseInt(line));
-                    }
-                }
-                this.executionPlans.addAll(filterCandidates(epCandidates, executedHashes));
-            } else {
-               this.executionPlans.addAll(epCandidates);
-            }
-        }
+    private void activate(BundleContext context, Config config) {
         this.context = context;
-    }
-
-    private static List<String> filterCandidates(List<String> epCandidates, Set<Integer> executedHashes) {
-        // only add those candidates which have not been processed yet
-       return epCandidates.stream().filter(candidate -> !isCandidateProcessed(candidate, executedHashes)).collect(Collectors.toList());
+        this.config = config;
     }
 
     private static boolean isCandidateProcessed(String candidate, Set<Integer> executedHashes) {
@@ -126,7 +93,32 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
 
     @Override
     public void processRepository(SlingRepository slingRepository) throws Exception {
-        if (!executionPlans.isEmpty()) {
+        
+        List<String> epCandidates = Arrays.asList(config.executionplans());
+        Set<Integer> executedHashes = new HashSet<>();
+        if (StringUtils.isEmpty(config.statusfilepath())) {
+            // if no path is configured lookup default file in bundledata
+            statusFile = context.getDataFile(EXECUTEDPLANS_FILE);
+        } else {
+            Path statusFilePath = Paths.get(config.statusfilepath());
+            if (statusFilePath.isAbsolute()) {
+                // only absolute references are considered for lookup of
+                // external statusfile
+                statusFile = statusFilePath.toFile();
+            } else {
+                throw new IllegalStateException("Only absolute paths supported");
+            }
+        }
+        if (statusFile.exists()) {
+            // in case statusFile already exists read all hashes
+            try (BufferedReader br = new BufferedReader(new FileReader(statusFile))) {
+                for (String line; (line = br.readLine()) != null;) {
+                    executedHashes.add(Integer.parseInt(line));
+                }
+            }
+        }
+        
+        if (!epCandidates.isEmpty()) {
             ServiceTracker<PackageRegistry, ?> st = new ServiceTracker<>(context, PackageRegistry.class, null);
             try {
                 st.open();
@@ -138,9 +130,15 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                 @SuppressWarnings("deprecation")
                 Session session = slingRepository.loginAdministrative(null);
                 try (BufferedWriter writer = new BufferedWriter(new FileWriter(statusFile))) {
-                    for (String plan : executionPlans) {
+                    for (String plan : epCandidates) {
                         builder.load(new ByteArrayInputStream(plan.getBytes(StandardCharsets.UTF_8)));
                         builder.with(session);
+                        boolean planHasSnapshot = builder.preview().stream().anyMatch( p -> p.getVersionString().endsWith("-SNAPSHOT"));
+                        // by default check if either there are no SNAPSHOT versions ( e.g. all releases ) or if the config was set to not reinstall snapshots
+                        boolean checkIfCandidateWasProcessed = !planHasSnapshot || !config.reinstallSnapshots();
+                        if ( checkIfCandidateWasProcessed && isCandidateProcessed(plan, executedHashes)) {
+                            continue;
+                        }
                         ExecutionPlan xplan = builder.execute();
                         if (xplan.getTasks().size() > 0) {
                             if (xplan.hasErrors()) {
