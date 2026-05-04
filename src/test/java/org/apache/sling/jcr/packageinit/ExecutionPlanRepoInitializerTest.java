@@ -220,6 +220,7 @@ public class ExecutionPlanRepoInitializerTest {
         when(pt.getPackageId()).thenReturn(PackageId.fromString("test:test:1.0"));
         when(pt.getState()).thenReturn(State.ERROR);
         Throwable testEx = new Throwable("expectedException");
+        PackageException pkgEx = new PackageException("Error installing package test:test:1.0: " + testEx.getMessage(), testEx);
         when(pt.getError()).thenReturn(testEx);
         ptl.add(pt);
         when(xplan.getTasks()).thenReturn(ptl);
@@ -231,7 +232,8 @@ public class ExecutionPlanRepoInitializerTest {
         cdl.await(20500, TimeUnit.MILLISECONDS);
         verify(builder, times(1)).load(captor.capture());
         assertTrue("Expected IllegalStateException.",foundExceptions.get(0) instanceof IllegalStateException);
-        assertEquals(testEx.getMessage(), foundExceptions.get(0).getSuppressed()[0].getMessage());
+        assertEquals(pkgEx.getMessage(), foundExceptions.get(0).getSuppressed()[0].getMessage());
+        assertEquals(testEx.getMessage(), foundExceptions.get(0).getSuppressed()[0].getCause().getMessage());
 
         List<ILoggingEvent> logsList = listAppender.list;
         assertEquals("Waiting for PackageRegistry.", logsList.get(0)

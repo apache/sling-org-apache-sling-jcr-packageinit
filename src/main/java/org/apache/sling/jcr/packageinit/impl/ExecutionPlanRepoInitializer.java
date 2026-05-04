@@ -22,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -33,6 +34,7 @@ import java.util.Set;
 import javax.jcr.Session;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.jackrabbit.vault.packaging.PackageException;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlan;
 import org.apache.jackrabbit.vault.packaging.registry.ExecutionPlanBuilder;
 import org.apache.jackrabbit.vault.packaging.registry.PackageRegistry;
@@ -126,39 +128,12 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
                 PackageRegistry registry = (PackageRegistry) st.waitForService(0);
                 logger.info("PackageRegistry found - starting execution of execution plan");
                 
-                ExecutionPlanBuilder builder = registry.createExecutionPlan();
                 @SuppressWarnings("deprecation")
                 Session session = slingRepository.loginAdministrative(null);
                 try (BufferedWriter writer = new BufferedWriter(new FileWriter(statusFile))) {
+                    int planIndex = 0;
                     for (String plan : epCandidates) {
-                        builder.load(new ByteArrayInputStream(plan.getBytes(StandardCharsets.UTF_8)));
-                        builder.with(session);
-                        boolean planHasSnapshot = builder.preview().stream().anyMatch( p -> p.getVersionString().endsWith("-SNAPSHOT"));
-                        // by default check if either there are no SNAPSHOT versions ( e.g. all releases ) or if the config was set to not reinstall snapshots
-                        boolean checkIfCandidateWasProcessed = !planHasSnapshot || !config.reinstallSnapshots();
-                        if ( checkIfCandidateWasProcessed && isCandidateProcessed(plan, executedHashes)) {
-                            continue;
-                        }
-                        ExecutionPlan xplan = builder.execute();
-                        if (xplan.getTasks().size() > 0) {
-                            if (xplan.hasErrors()) {
-                                IllegalStateException ex = new IllegalStateException("Execution plan contained errors - cannot complete repository initialization.");
-                                for (PackageTask task : xplan.getTasks()) {
-                                    if (PackageTask.State.ERROR.equals(task.getState())){
-                                        ex.addSuppressed(task.getError());
-                                    }
-                                }
-                                throw ex;
-                            }
-                            logger.info("Execution plan executed with {} entries", xplan.getTasks().size());
-                        } else {
-                            logger.info("No tasks found in execution plan - no additional packages installed.");
-                        }
-                        
-                        // save hashes to file for crosscheck on subsequent startup to avoid double processing
-                        writer.write(String.valueOf(plan.hashCode()));
-                        writer.newLine();
-
+                        executePlan(executedHashes, registry, session, writer, plan, "Execution plan " + planIndex++);
                     }
                 } finally {
                     session.logout();
@@ -169,5 +144,37 @@ public class ExecutionPlanRepoInitializer implements SlingRepositoryInitializer 
         } else {
             logger.info("No execution plans configured - skipping init.");
         }
+    }
+
+    private void executePlan(Set<Integer> executedHashes, PackageRegistry registry, Session session, BufferedWriter writer, String plan, String planLabel)
+            throws IOException, PackageException {
+        ExecutionPlanBuilder builder = registry.createExecutionPlan();
+        builder.load(new ByteArrayInputStream(plan.getBytes(StandardCharsets.UTF_8)));
+        builder.with(session);
+        boolean planHasSnapshot = builder.preview().stream().anyMatch( p -> p.getVersionString().endsWith("-SNAPSHOT"));
+        // by default check if either there are no SNAPSHOT versions ( e.g. all releases ) or if the config was set to not reinstall snapshots
+        boolean checkIfCandidateWasProcessed = !planHasSnapshot || !config.reinstallSnapshots();
+        if ( checkIfCandidateWasProcessed && isCandidateProcessed(plan, executedHashes)) {
+            return;
+        }
+        ExecutionPlan xplan = builder.execute();
+        if (xplan.getTasks().size() > 0) {
+            if (xplan.hasErrors()) {
+                IllegalStateException ex = new IllegalStateException(planLabel + " contained errors - cannot complete repository initialization.");
+                for (PackageTask task : xplan.getTasks()) {
+                    if (PackageTask.State.ERROR.equals(task.getState())) {
+                        ex.addSuppressed(new PackageException("Error installing package " + task.getPackageId() + ": " + task.getError().getMessage(), task.getError()));
+                    }
+                }
+                throw ex;
+            }
+            logger.info(planLabel + " executed with {} entries", xplan.getTasks().size());
+        } else {
+            logger.info(planLabel + ": No tasks found - no additional packages installed.");
+        }
+        
+        // save hashes to file for crosscheck on subsequent startup to avoid double processing
+        writer.write(String.valueOf(plan.hashCode()));
+        writer.newLine();
     }
 }
